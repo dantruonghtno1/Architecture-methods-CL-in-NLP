@@ -499,12 +499,17 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
 
         if layer_type=='tsv':
             self.num_routes = config.ntasks
+            # self.num_routes = 19
             self.num_capsules = config.semantic_cap_size
+            # self.num_cap_size = 3
             self.class_dim = config.max_seq_length
+            # self.class_dim = 128
             self.in_channel = config.max_seq_length*config.semantic_cap_size
-            # self.in_channel = 100
+            # self.in_channel = 128 * 3
             self.elarger=torch.nn.Embedding(config.ntasks,config.bert_hidden_size)
+            # self.elarger = Embedding(19, 128)
             self.larger=torch.nn.Linear(config.semantic_cap_size,config.bert_hidden_size) #each task has its own larger way
+            # self.larger = Linear(3, 768)
             self.gate=torch.nn.Sigmoid()
             self.softmax = torch.nn.Softmax()
             self.num_iterations = 3
@@ -565,13 +570,15 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
 
             if self.config.apply_one_layer_shared:
                 # print('apply_one_layer_shared ')
+                # x: batch_size x 768
                 outputs = [fc1(x).view(x.size(0), -1, 1) for fc1 in self.fc1]
+                # [batch_size x 3] => [batch_size x 3 x 1]
 
             elif self.config.apply_two_layer_shared:
                 # print('apply_two_layer_shabert_hidden_sizered ')
                 outputs = [fc2(fc1(x)).view(x.size(0), -1, 1) for fc1,fc2 in zip(self.fc1,self.fc2)]
             outputs = torch.cat(outputs, dim=-1)
-
+            # outputs : [batch_size x 3 x 19] (ntask=19)
             outputs = self.squash(outputs)
             return outputs.transpose(2,1)
     #
@@ -586,6 +593,7 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
 
     def squash(self, tensor, dim=-1):
         squared_norm = (tensor ** 2).sum(dim=dim, keepdim=True)
+        # [batch_size x 3]
         scale = squared_norm / (1 + squared_norm)
         return scale * tensor / torch.sqrt(squared_norm)
 

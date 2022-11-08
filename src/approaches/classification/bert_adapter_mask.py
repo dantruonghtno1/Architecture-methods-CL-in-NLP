@@ -195,6 +195,12 @@ class Appr(ApprBase):
 
 
     def eval(self,t,data,test=None,trained_task=None):
+        """
+        + DIL setting: 
+            - distillation and use model of last task and predict.
+            - entropy: get argmin and use this model for predict.
+        
+        """
         total_loss=0
         total_acc=0
         total_num=0
@@ -213,11 +219,14 @@ class Appr(ApprBase):
                 if 'dil' in self.args.scenario:
 
                     if self.args.last_id: # use the last one
+                        # use last id for testing, only usefull for DIL setting. 
                         output_dict = self.model(trained_task,input_ids, segment_ids, input_mask,s=self.smax)
                         output = output_dict['y']
                         masks = output_dict['masks']
 
                     elif self.args.ent_id: # detect the testing is
+                        # entropy to decide ID, only useful in DIL setting
+                        # get min entropy and predict.
                         outputs = []
                         entropies = []
 
@@ -236,6 +245,7 @@ class Appr(ApprBase):
                             entropy = -1*torch.sum(Y_hat * torch.log(Y_hat))
                             entropies.append(entropy)
                         inf_task_id = torch.argmin(torch.stack(entropies))
+                        # get min entropy, this is index of task (aka task id). then use this task index for predict result. 
                         # self.logger.info('inf_task_id: '+str(inf_task_id))
                         output=outputs[inf_task_id] #but don't know which one
 
@@ -247,8 +257,8 @@ class Appr(ApprBase):
                     output = outputs[t]
 
 
-                loss,_=self.hat_criterion_adapter(output,targets,masks)
-
+                loss,_=self.hat_criterion_adapter(output,targets,masks)        
+                # get y_pred here
                 _,pred=output.max(1)
                 hits=(pred==targets).float()
                 target_list.append(targets)

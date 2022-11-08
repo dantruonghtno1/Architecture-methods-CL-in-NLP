@@ -26,7 +26,7 @@ sys.path.append("./approaches/")
 from contrastive_loss import SupConLoss,DistillKL
 
 
-#TODO: merge with bert_adapter_base.py
+# TODO: merge with bert_adapter_base.py
 # mask means only KSM and there is no TSM
 
 
