@@ -515,9 +515,11 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
             self.num_iterations = 3
             self.route_weights = \
                 nn.Parameter(torch.randn(self.num_capsules, self.num_routes, self.in_channel, self.class_dim))
+                # 3 x 19 x 128*3 x 128
 
             if  config.no_tsv_mask:
                 self.tsv = torch.ones( config.ntasks,config.ntasks).data.cuda()# for backward
+                # [19; 19]
             else:
                 self.tsv = torch.tril(torch.ones(config.ntasks,config.ntasks)).data.cuda()# for backward
 
@@ -540,29 +542,73 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
         if layer_type=='tsv':
             batch_size = x.size(0)
             priors = x[None, :, :, None, :] @ self.route_weights[:, None, :, :, :]
+            # [1, b, 19, 1, 128*3] @ [3, 1, 19, 128*3, 128] = [3, 16, 19, 1, 128]
             logits = torch.zeros(*priors.size()).cuda()
+            # [3,16, 19, 1, 128]
             # print('logits: ',logits.size())  torch.Size([3, 32, 19, 1, 128])
             mask=torch.zeros(self.config.ntasks).data.cuda()
             # print('self.tsv[t]: ',self.tsv[t])
             for x_id in range(self.config.ntasks):
                 if self.tsv[t][x_id] == 0: mask[x_id].fill_(-10000) # block future, all previous are the same
 
+
+            # dynamic routing
             for i in range(self.num_iterations):
+
+                
+                """
+                1. s = sum c.u
+                2. c = softmax(b)
+                3. b = b + a 
+                4. a = u.v 
+                5. v = squash(s)
+
+                + logits = b
+                + probs = c
+                + vote_logits = s
+                + outputs = v
+                + 
+                """
                 logits = logits*self.tsv[t].data.view(1,1,-1,1,1) #multiply 0 to future task
+                # khởi tạo + mask b
+                # [3, B, 19, 1, 128]
+                # self.tsv là mask đi những task đằng sau
+                # ví dụ: task 4: [1, 1, 1, 1, 0, 0, 0, 0, ..., 0]
                 logits = logits + mask.data.view(1,1,-1,1,1) #add a very small negative number
+                # [3, 16, 19, 1, 128]
                 probs = self.my_softmax(logits, dim=2)
+                # c = softmax(b)
+                # [3, 16, 19, 1, 128]
+
                 vote_outputs = (probs * priors).sum(dim=2, keepdim=True) #voted
+                # s = sum c.u  where c = prods, u = priors 
+                # probs : [3, 16, 19, 1, 128]
+                # priors: [3, 16, 19, 1, 128]
+                # vote_outputs: [3, 16, 1, 1, 128]
                 outputs = self.squash(vote_outputs)
+                # v = squash(s)
+                # outputs: [3, 16, 1, 1, 128]
+
 
                 if i != self.num_iterations - 1:
                     delta_logits = (priors * outputs).sum(dim=-1, keepdim=True)
+                    # a = u.v
                     logits = logits + delta_logits
+                    # b = b + a 
+                    # delta_logits = a
+
 
             h_output = vote_outputs.view(batch_size,self.config.max_seq_length,-1)
+            # vote_outputs : [3, 16, 1, 1, 128]
+            # h_output : [16, 128, 3]
 
             h_output= self.larger(h_output)
+            # [16, 128, 768]
+
             glarger=self.mask(t=t,s=s)
+            # 
             h_output=h_output*glarger.expand_as(h_output)
+            # nhân với task embedding
 
             return h_output
 
@@ -572,24 +618,28 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
                 # print('apply_one_layer_shared ')
                 # x: batch_size x 768
                 outputs = [fc1(x).view(x.size(0), -1, 1) for fc1 in self.fc1]
-                # [batch_size x 3] => [batch_size x 3 x 1]
-
+                # [B, 128*3, 1]
             elif self.config.apply_two_layer_shared:
                 # print('apply_two_layer_shabert_hidden_sizered ')
                 outputs = [fc2(fc1(x)).view(x.size(0), -1, 1) for fc1,fc2 in zip(self.fc1,self.fc2)]
             outputs = torch.cat(outputs, dim=-1)
-            # outputs : [batch_size x 3 x 19] (ntask=19)
+            # outputs : [b, 128*3, 19]
             outputs = self.squash(outputs)
+            # outputs: [b, 128*3, 19]
+            # ==> [b, 19, 128*3]
             return outputs.transpose(2,1)
     #
     def mask(self,t,s):
         glarger=self.gate(s*self.elarger(torch.LongTensor([t]).cuda()))
+        # embedding task t 
         return glarger
 
     def my_softmax(self,input, dim=1):
         transposed_input = input.transpose(dim, len(input.size()) - 1)
+        # [3,16,19,1,128].transpose(2, -1) = [3, 16, 128, 1, 19]
         softmaxed_output = F.softmax(transposed_input.contiguous().view(-1, transposed_input.size(-1)), dim=-1)
-        return softmaxed_output.view(*transposed_input.size()).transpose(dim, len(input.size()) - 1)
+        # [3, 16, 128, 1, 19]
+        return softmaxed_output.view(*transposed_input.size()).transpose(dim, len(input.size()) - 1) #[3. 16, 19, 1, 128]
 
     def squash(self, tensor, dim=-1):
         squared_norm = (tensor ** 2).sum(dim=dim, keepdim=True)
