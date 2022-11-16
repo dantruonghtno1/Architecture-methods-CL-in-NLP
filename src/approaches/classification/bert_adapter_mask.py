@@ -243,6 +243,7 @@ class Appr(ApprBase):
 
                             Y_hat = F.softmax(output, -1)
                             entropy = -1*torch.sum(Y_hat * torch.log(Y_hat))
+                            # get entropy 
                             entropies.append(entropy)
                         inf_task_id = torch.argmin(torch.stack(entropies))
                         # get min entropy, this is index of task (aka task id). then use this task index for predict result. 

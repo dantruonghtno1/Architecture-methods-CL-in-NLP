@@ -545,7 +545,7 @@ class CapsuleLayer(nn.Module): #it has its own number of capsule for output
             # [1, b, 19, 1, 128*3] @ [3, 1, 19, 128*3, 128] = [3, 16, 19, 1, 128]
             logits = torch.zeros(*priors.size()).cuda()
             # [3,16, 19, 1, 128]
-            # print('logits: ',logits.size())  torch.Size([3, 32, 19, 1, 128])
+            # print('logits: ',logits.size())  torch.Size([3, 16, 19, 1, 128])
             mask=torch.zeros(self.config.ntasks).data.cuda()
             # print('self.tsv[t]: ',self.tsv[t])
             for x_id in range(self.config.ntasks):
